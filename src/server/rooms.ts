@@ -1,6 +1,12 @@
 import type { Server, Socket } from "socket.io";
 import { addPlayer, applyAction, createLobby, GameError, removePlayer, startGame } from "../lib/game/engine";
-import { decideFortify, decideNextAttack, decideReinforcement } from "../lib/game/ai";
+import {
+  decideConquerMove,
+  decideFortify,
+  decideNextAttack,
+  decideReinforcement,
+  decideSetupPlacement,
+} from "../lib/game/ai";
 import { makeId } from "../lib/game/id";
 import { GameAction, GameState } from "../lib/game/types";
 
@@ -65,7 +71,20 @@ async function runAiIfNeeded(io: Server, room: Room) {
       const curPlayer = cur.players.find((p) => p.id === curId);
       if (!curPlayer || curPlayer.kind !== "ai") break;
 
-      if (cur.phase === "reinforce") {
+      if (cur.phase === "setup") {
+        const actions = decideSetupPlacement(cur, curId);
+        for (const action of actions) {
+          room.gameState = applyAction(room.gameState, action);
+          broadcastGame(io, room);
+          await delay(AI_REINFORCE_DELAY_MS);
+        }
+        if (actions.length === 0) break;
+      } else if (cur.phase === "conquer") {
+        const action = decideConquerMove(cur, curId);
+        room.gameState = applyAction(room.gameState, action);
+        broadcastGame(io, room);
+        await delay(AI_ATTACK_DELAY_MS);
+      } else if (cur.phase === "reinforce") {
         const actions = decideReinforcement(cur, curId);
         for (const action of actions) {
           room.gameState = applyAction(room.gameState, action);

@@ -27,8 +27,10 @@ export type PlayerKind = "human" | "ai";
 
 export type Phase =
   | "lobby"
+  | "setup"
   | "reinforce"
   | "attack"
+  | "conquer"
   | "fortify"
   | "gameover";
 
@@ -61,6 +63,15 @@ export interface PendingBattle {
   conquered: boolean;
 }
 
+export interface PendingConquest {
+  from: string;
+  to: string;
+  /** minimo obbligatorio: numero di dadi usati nel lancio finale vincente */
+  min: number;
+  /** massimo consentito: armate disponibili nel territorio di partenza meno 1 */
+  max: number;
+}
+
 export interface LogEntry {
   id: string;
   turn: number;
@@ -76,12 +87,17 @@ export interface GameState {
   status: "lobby" | "playing" | "finished";
   players: Player[];
   turnOrder: string[];
+  /** ordine di piazzamento della fase di setup iniziale: inverso rispetto a turnOrder */
+  setupOrder: string[];
+  /** armate già piazzate dal giocatore corrente nel turno di setup in corso (max 3) */
+  setupPlacedThisTurn: number;
   currentPlayerIndex: number;
   turn: number;
   phase: Phase;
   territories: Record<string, TerritoryState>;
   settings: GameSettings;
   lastBattle: PendingBattle | null;
+  pendingConquest: PendingConquest | null;
   log: LogEntry[];
   winnerId: string | null;
 }
@@ -98,6 +114,7 @@ export type GameAction =
       to: string;
       dice: number;
     }
+  | { type: "MOVE_IN_ARMIES"; playerId: string; count: number }
   | { type: "END_ATTACK"; playerId: string }
   | {
       type: "FORTIFY";

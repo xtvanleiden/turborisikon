@@ -13,12 +13,15 @@ export function createLobby(): GameState {
     status: "lobby",
     players: [],
     turnOrder: [],
+    setupOrder: [],
+    setupPlacedThisTurn: 0,
     currentPlayerIndex: 0,
     turn: 0,
     phase: "reinforce",
     territories: {},
     settings: { ...DEFAULT_SETTINGS },
     lastBattle: null,
+    pendingConquest: null,
     log: [],
     winnerId: null,
   };
@@ -100,13 +103,27 @@ export function startGame(state: GameState): GameState {
   }
 
   next.status = "playing";
-  next.turn = 1;
+  next.turn = 0;
+  next.setupOrder = [...next.turnOrder].reverse();
+  next.setupPlacedThisTurn = 0;
   next.currentPlayerIndex = 0;
-  next.phase = "reinforce";
+  next.phase = "setup";
   next.log = [];
   next.winnerId = null;
-  log(next, `La partita inizia. Tocca a ${playerById(next, next.turnOrder[0]).name}.`);
-  grantTurnIncome(next, next.turnOrder[0]);
+  next.pendingConquest = null;
+
+  const firstSetupIdx = next.setupOrder.findIndex(
+    (pid) => playerById(next, pid).reserve > 0
+  );
+  if (firstSetupIdx === -1) {
+    beginRealGame(next);
+  } else {
+    next.currentPlayerIndex = firstSetupIdx;
+    log(
+      next,
+      `La partita inizia. Fase di piazzamento iniziale: tocca a ${playerById(next, next.setupOrder[firstSetupIdx]).name}.`
+    );
+  }
   return next;
 }
 
@@ -116,7 +133,10 @@ function playerById(state: GameState, id: string): Player {
   return p;
 }
 
-function currentPlayerId(state: GameState): string {
+export function currentPlayerId(state: GameState): string {
+  if (state.phase === "setup") {
+    return state.setupOrder[state.currentPlayerIndex];
+  }
   return state.turnOrder[state.currentPlayerIndex];
 }
 
@@ -144,6 +164,40 @@ function checkWinner(state: GameState) {
     state.winnerId = alive[0].id;
     log(state, `${alive[0].name} ha conquistato il mondo!`);
   }
+}
+
+function totalReserve(state: GameState): number {
+  return state.players.reduce((sum, p) => sum + p.reserve, 0);
+}
+
+function beginRealGame(state: GameState) {
+  state.phase = "reinforce";
+  state.currentPlayerIndex = 0;
+  state.turn = 1;
+  const firstPlayer = playerById(state, state.turnOrder[0]);
+  log(state, `Piazzamento iniziale completato. La partita inizia. Tocca a ${firstPlayer.name}.`);
+  grantTurnIncome(state, state.turnOrder[0]);
+}
+
+function advanceSetupTurn(state: GameState) {
+  state.setupPlacedThisTurn = 0;
+  if (totalReserve(state) <= 0) {
+    beginRealGame(state);
+    return;
+  }
+  const n = state.setupOrder.length;
+  let idx = state.currentPlayerIndex;
+  for (let i = 0; i < n; i++) {
+    idx = (idx + 1) % n;
+    const pid = state.setupOrder[idx];
+    const player = playerById(state, pid);
+    if (player.reserve > 0) {
+      state.currentPlayerIndex = idx;
+      log(state, `Piazzamento iniziale: tocca a ${player.name} (riserva: ${player.reserve}).`);
+      return;
+    }
+  }
+  beginRealGame(state);
 }
 
 function advanceToNextPlayer(state: GameState) {
@@ -184,7 +238,9 @@ export function applyAction(state: GameState, action: GameAction): GameState {
     }
     case "PLACE_ARMIES": {
       assertCurrentPlayer(next, action.playerId);
-      assertPhase(next, "reinforce");
+      if (next.phase !== "reinforce" && next.phase !== "setup") {
+        throw new GameError(`Azione non valida nella fase "${next.phase}"`);
+      }
       const player = playerById(next, action.playerId);
       const territory = next.territories[action.territoryId];
       if (!territory) throw new GameError("Territorio inesistente");
@@ -192,9 +248,21 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       if (action.count <= 0 || action.count > player.reserve) {
         throw new GameError("Armate in riserva insufficienti");
       }
+      if (next.phase === "setup") {
+        const remaining = 3 - next.setupPlacedThisTurn;
+        if (action.count > remaining) {
+          throw new GameError(`Puoi piazzare al massimo ${remaining} armate in questo turno`);
+        }
+      }
       player.reserve -= action.count;
       territory.armies += action.count;
       log(next, `${player.name} schiera ${action.count} armate su ${action.territoryId}.`);
+      if (next.phase === "setup") {
+        next.setupPlacedThisTurn += action.count;
+        if (next.setupPlacedThisTurn >= 3 || player.reserve === 0) {
+          advanceSetupTurn(next);
+        }
+      }
       break;
     }
     case "END_REINFORCE": {
@@ -227,10 +295,12 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       let conquered = false;
       if (to.armies <= 0) {
         conquered = true;
-        const moveIn = Math.min(attackerDiceCount, from.armies - 1);
+        const min = Math.min(attackerDiceCount, from.armies - 1);
+        const max = Math.max(min, from.armies - 1);
         to.owner = action.playerId;
-        to.armies = Math.max(1, moveIn);
-        from.armies -= to.armies;
+        to.armies = 0;
+        next.pendingConquest = { from: action.from, to: action.to, min, max };
+        next.phase = "conquer";
 
         const defender = playerById(next, defenderId);
         if (territoriesOwnedCount(next, defenderId) === 0) {
@@ -262,6 +332,24 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       );
 
       checkWinner(next);
+      break;
+    }
+    case "MOVE_IN_ARMIES": {
+      assertCurrentPlayer(next, action.playerId);
+      assertPhase(next, "conquer");
+      const pending = next.pendingConquest;
+      if (!pending) throw new GameError("Nessuna conquista in sospeso");
+      const player = playerById(next, action.playerId);
+      if (action.count < pending.min || action.count > pending.max) {
+        throw new GameError(`Devi spostare tra ${pending.min} e ${pending.max} armate`);
+      }
+      const from = next.territories[pending.from];
+      const to = next.territories[pending.to];
+      from.armies -= action.count;
+      to.armies += action.count;
+      log(next, `${player.name} sposta ${action.count} armate nel territorio conquistato (${pending.to}).`);
+      next.pendingConquest = null;
+      next.phase = "attack";
       break;
     }
     case "END_ATTACK": {

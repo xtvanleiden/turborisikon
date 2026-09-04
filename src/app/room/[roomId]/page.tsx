@@ -6,6 +6,7 @@ import { getSocket } from "@/lib/socketClient";
 import { TERRITORY_MAP } from "@/lib/game/board";
 import { maxArmiesPurchasable } from "@/lib/game/economy";
 import { maxAttackerDice, maxDefenderDice } from "@/lib/game/combat";
+import { currentPlayerId } from "@/lib/game/engine";
 import { GameState, Player } from "@/lib/game/types";
 import Board from "@/components/Board";
 
@@ -37,6 +38,7 @@ export default function RoomPage() {
   const [buyCount, setBuyCount] = useState(0);
   const [diceCount, setDiceCount] = useState(3);
   const [moveCount, setMoveCount] = useState(1);
+  const [conquerCount, setConquerCount] = useState(1);
 
   useEffect(() => {
     const socket = getSocket();
@@ -103,16 +105,14 @@ export default function RoomPage() {
 
   const me = room?.players.find((p) => p.id === myId) ?? null;
   const isMyTurn = Boolean(
-    game && game.status === "playing" && game.turnOrder[game.currentPlayerIndex] === myId
+    game && game.status === "playing" && currentPlayerId(game) === myId
   );
-  const currentPlayer = game
-    ? game.players.find((p) => p.id === game.turnOrder[game.currentPlayerIndex])
-    : null;
+  const currentPlayer = game ? game.players.find((p) => p.id === currentPlayerId(game)) : null;
 
   const validTargets = useMemo(() => {
     const set = new Set<string>();
     if (!game || !myId) return set;
-    if (game.phase === "reinforce" && !selectedFrom) {
+    if ((game.phase === "reinforce" || game.phase === "setup") && !selectedFrom) {
       for (const [id, t] of Object.entries(game.territories)) {
         if (t.owner === myId) set.add(id);
       }
@@ -160,6 +160,16 @@ export default function RoomPage() {
       return;
     }
 
+    if (game.phase === "setup") {
+      if (t.owner !== myId) return;
+      const player = game.players.find((p) => p.id === myId)!;
+      const remaining = 3 - game.setupPlacedThisTurn;
+      const count = Math.min(placeCount, player.reserve, remaining);
+      if (count <= 0) return;
+      dispatch({ type: "PLACE_ARMIES", playerId: myId, territoryId: id, count });
+      return;
+    }
+
     if (game.phase === "attack") {
       if (!selectedFrom) {
         if (t.owner === myId && t.armies >= 2) setSelectedFrom(id);
@@ -198,6 +208,12 @@ export default function RoomPage() {
     setSelectedFrom(null);
     setSelectedTo(null);
   }, [game?.phase, game?.currentPlayerIndex]);
+
+  useEffect(() => {
+    if (game?.phase === "conquer" && game.pendingConquest) {
+      setConquerCount(game.pendingConquest.min);
+    }
+  }, [game?.phase, game?.pendingConquest?.to]);
 
   if (!myId) {
     return (
@@ -370,6 +386,76 @@ export default function RoomPage() {
             <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
               In attesa di <strong>{currentPlayer?.name}</strong>...
             </p>
+          )}
+
+          {isMyTurn && game.phase === "setup" && myPlayer && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>
+                Piazzamento iniziale — Riserva: <strong style={{ color: "var(--ok)" }}>{myPlayer.reserve}</strong>{" "}
+                armate. Puoi piazzarne ancora{" "}
+                <strong style={{ color: "var(--accent)" }}>
+                  {Math.min(3 - game.setupPlacedThisTurn, myPlayer.reserve)}
+                </strong>{" "}
+                in questo turno.
+              </p>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Quantità da piazzare:</span>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={Math.max(1, Math.min(3 - game.setupPlacedThisTurn, myPlayer.reserve))}
+                  value={placeCount}
+                  onChange={(e) => setPlaceCount(Number(e.target.value))}
+                  style={{ width: 70 }}
+                />
+              </div>
+              <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
+                Clicca un tuo territorio sulla mappa per piazzare la quantità indicata. Ogni giocatore piazza al
+                massimo 3 armate a turno, in ordine inverso rispetto all&apos;ordine di gioco, finché tutte le
+                riserve non sono esaurite.
+              </p>
+            </div>
+          )}
+
+          {isMyTurn && game.phase === "conquer" && game.pendingConquest && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <p style={{ fontSize: 13, margin: 0 }}>
+                Territorio conquistato:{" "}
+                <strong style={{ color: "var(--accent)" }}>{TERRITORY_MAP[game.pendingConquest.to].name}</strong>
+              </p>
+              <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
+                Devi spostare almeno <strong>{game.pendingConquest.min}</strong> armate (tante quante i dadi
+                dell&apos;ultimo lancio vincente). Puoi spostarne fino a{" "}
+                <strong>{game.pendingConquest.max}</strong>, lasciando almeno 1 armata nel territorio di partenza.
+              </p>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  className="input"
+                  type="number"
+                  min={game.pendingConquest.min}
+                  max={game.pendingConquest.max}
+                  value={conquerCount}
+                  onChange={(e) => setConquerCount(Number(e.target.value))}
+                  style={{ width: 70 }}
+                />
+                <button
+                  className="btn btn-primary"
+                  onClick={() =>
+                    dispatch({
+                      type: "MOVE_IN_ARMIES",
+                      playerId: myId,
+                      count: Math.min(
+                        game.pendingConquest!.max,
+                        Math.max(game.pendingConquest!.min, conquerCount)
+                      ),
+                    })
+                  }
+                >
+                  Conferma spostamento
+                </button>
+              </div>
+            </div>
           )}
 
           {isMyTurn && game.phase === "reinforce" && myPlayer && (
@@ -559,10 +645,14 @@ export default function RoomPage() {
 
 function phaseLabel(phase: GameState["phase"]) {
   switch (phase) {
+    case "setup":
+      return "Piazzamento iniziale";
     case "reinforce":
       return "Rinforzo";
     case "attack":
       return "Attacco";
+    case "conquer":
+      return "Conquista";
     case "fortify":
       return "Spostamento";
     case "gameover":

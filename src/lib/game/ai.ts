@@ -24,6 +24,48 @@ function borderScore(state: GameState, playerId: string, territoryId: string): n
   return enemyMax - own;
 }
 
+/** Decide il piazzamento delle armate dell'IA durante la fase di setup iniziale (max 3 a turno). */
+export function decideSetupPlacement(state: GameState, playerId: string): GameAction[] {
+  const player = state.players.find((p) => p.id === playerId)!;
+  const toPlace = Math.min(3, player.reserve);
+  const actions: GameAction[] = [];
+  if (toPlace <= 0) return actions;
+
+  const owned = ownedIds(state, playerId);
+  const borders = owned
+    .map((id) => ({ id, score: borderScore(state, playerId, id) }))
+    .filter((b) => b.score > -1)
+    .sort((a, b) => b.score - a.score);
+  const targets = borders.length > 0 ? borders : owned.map((id) => ({ id, score: 0 }));
+
+  const allocation = new Map<string, number>();
+  let remaining = toPlace;
+  let i = 0;
+  while (remaining > 0 && targets.length > 0) {
+    const target = targets[i % targets.length];
+    allocation.set(target.id, (allocation.get(target.id) ?? 0) + 1);
+    remaining -= 1;
+    i += 1;
+  }
+  for (const [territoryId, count] of allocation) {
+    actions.push({ type: "PLACE_ARMIES", playerId, territoryId, count });
+  }
+  return actions;
+}
+
+/** Decide quante armate spostare nel territorio appena conquistato dall'IA. */
+export function decideConquerMove(state: GameState, playerId: string): GameAction {
+  const pending = state.pendingConquest!;
+  const territory = TERRITORY_MAP[pending.to];
+  let enemyMax = 0;
+  for (const adj of territory.adjacent) {
+    const t = state.territories[adj];
+    if (t.owner && t.owner !== playerId) enemyMax = Math.max(enemyMax, t.armies);
+  }
+  const count = Math.min(pending.max, Math.max(pending.min, enemyMax));
+  return { type: "MOVE_IN_ARMIES", playerId, count };
+}
+
 /** Decide gli acquisti e il piazzamento delle armate per il turno di rinforzo dell'IA. */
 export function decideReinforcement(state: GameState, playerId: string): GameAction[] {
   const player = state.players.find((p) => p.id === playerId)!;
