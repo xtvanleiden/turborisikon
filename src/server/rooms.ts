@@ -1,5 +1,13 @@
 import type { Server, Socket } from "socket.io";
-import { addPlayer, applyAction, createLobby, GameError, removePlayer, startGame } from "../lib/game/engine";
+import {
+  addPlayer,
+  applyAction,
+  createLobby,
+  currentPlayerId,
+  GameError,
+  removePlayer,
+  startGame,
+} from "../lib/game/engine";
 import {
   decideConquerMove,
   decideFortify,
@@ -8,6 +16,7 @@ import {
   decideSetupPlacement,
 } from "../lib/game/ai";
 import { makeId } from "../lib/game/id";
+import { pickUnusedPersonality } from "../lib/game/personalities";
 import { GameAction, GameState } from "../lib/game/types";
 
 interface Room {
@@ -59,7 +68,7 @@ async function runAiIfNeeded(io: Server, room: Room) {
   if (room.aiRunning) return;
   const state = room.gameState;
   if (state.status !== "playing") return;
-  const currentId = state.turnOrder[state.currentPlayerIndex];
+  const currentId = currentPlayerId(state);
   const player = state.players.find((p) => p.id === currentId);
   if (!player || player.kind !== "ai") return;
 
@@ -67,7 +76,7 @@ async function runAiIfNeeded(io: Server, room: Room) {
   try {
     while (room.gameState.status === "playing") {
       const cur = room.gameState;
-      const curId = cur.turnOrder[cur.currentPlayerIndex];
+      const curId = currentPlayerId(cur);
       const curPlayer = cur.players.find((p) => p.id === curId);
       if (!curPlayer || curPlayer.kind !== "ai") break;
 
@@ -186,8 +195,9 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
     if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può farlo" });
     try {
-      const aiNumber = room.gameState.players.filter((p) => p.kind === "ai").length + 1;
-      room.gameState = addPlayer(room.gameState, `IA ${aiNumber}`, "ai");
+      const usedPersonalities = room.gameState.players.map((p) => p.personalityId);
+      const personality = pickUnusedPersonality(usedPersonalities);
+      room.gameState = addPlayer(room.gameState, personality.name, "ai", undefined, personality.id);
       ack?.({ ok: true });
       broadcastRoom(io, room);
     } catch (e) {

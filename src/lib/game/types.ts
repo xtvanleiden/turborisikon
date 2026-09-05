@@ -44,6 +44,10 @@ export interface Player {
   currency: number;
   /** Armies bought or earned but not yet placed on the board */
   reserve: number;
+  /** identità storica dell'IA (vedi personalities.ts); null per i giocatori umani */
+  personalityId: string | null;
+  /** turni consecutivi (propri) senza aver tentato nemmeno un attacco: alimenta l'"impazienza" dell'IA */
+  turnsSinceLastAttack: number;
 }
 
 export interface TerritoryState {
@@ -98,6 +102,8 @@ export interface GameState {
   settings: GameSettings;
   lastBattle: PendingBattle | null;
   pendingConquest: PendingConquest | null;
+  /** true se il giocatore in turno ha già tentato almeno un attacco in questa fase di attacco */
+  attackedThisTurn: boolean;
   log: LogEntry[];
   winnerId: string | null;
 }

@@ -7,6 +7,7 @@ import { TERRITORY_MAP } from "@/lib/game/board";
 import { maxArmiesPurchasable } from "@/lib/game/economy";
 import { maxAttackerDice, maxDefenderDice } from "@/lib/game/combat";
 import { currentPlayerId } from "@/lib/game/engine";
+import { personalityById } from "@/lib/game/personalities";
 import { GameState, Player } from "@/lib/game/types";
 import Board from "@/components/Board";
 
@@ -270,7 +271,10 @@ export default function RoomPage() {
                 }}
               >
                 <span style={{ width: 12, height: 12, borderRadius: "50%", background: p.color }} />
-                <span style={{ flex: 1 }}>
+                <span
+                  style={{ flex: 1 }}
+                  title={p.kind === "ai" ? personalityById(p.personalityId).tagline : undefined}
+                >
                   {p.name} {p.id === room.hostId && <span style={{ color: "var(--accent)" }}>(host)</span>}
                 </span>
                 <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
@@ -366,7 +370,10 @@ export default function RoomPage() {
                   }}
                 >
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: p.color }} />
-                  <span style={{ flex: 1 }}>
+                  <span
+                    style={{ flex: 1 }}
+                    title={p.kind === "ai" ? personalityById(p.personalityId).tagline : undefined}
+                  >
                     {p.name} {isTurn && "▶"}
                   </span>
                   <span style={{ color: "var(--text-dim)" }}>{territoryCount} terr.</span>

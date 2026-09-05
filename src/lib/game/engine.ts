@@ -22,6 +22,7 @@ export function createLobby(): GameState {
     settings: { ...DEFAULT_SETTINGS },
     lastBattle: null,
     pendingConquest: null,
+    attackedThisTurn: false,
     log: [],
     winnerId: null,
   };
@@ -31,7 +32,8 @@ export function addPlayer(
   state: GameState,
   name: string,
   kind: PlayerKind,
-  id?: string
+  id?: string,
+  personalityId: string | null = null
 ): GameState {
   const next = structuredClone(state);
   if (next.status !== "lobby") throw new GameError("La partita è già iniziata");
@@ -45,6 +47,8 @@ export function addPlayer(
     alive: true,
     currency: 0,
     reserve: 0,
+    personalityId,
+    turnsSinceLastAttack: 0,
   });
   return next;
 }
@@ -269,6 +273,7 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       assertCurrentPlayer(next, action.playerId);
       assertPhase(next, "reinforce");
       next.phase = "attack";
+      next.attackedThisTurn = false;
       break;
     }
     case "ATTACK": {
@@ -281,6 +286,8 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       if (from.owner !== action.playerId) throw new GameError("Territorio di partenza non tuo");
       if (to.owner === action.playerId) throw new GameError("Non puoi attaccare un tuo territorio");
       if (!areAdjacent(action.from, action.to)) throw new GameError("Territori non adiacenti");
+
+      next.attackedThisTurn = true;
 
       const maxAtk = maxAttackerDice(from.armies);
       if (maxAtk < 1) throw new GameError("Armate insufficienti per attaccare");
@@ -355,6 +362,8 @@ export function applyAction(state: GameState, action: GameAction): GameState {
     case "END_ATTACK": {
       assertCurrentPlayer(next, action.playerId);
       assertPhase(next, "attack");
+      const player = playerById(next, action.playerId);
+      player.turnsSinceLastAttack = next.attackedThisTurn ? 0 : player.turnsSinceLastAttack + 1;
       next.phase = "fortify";
       break;
     }
