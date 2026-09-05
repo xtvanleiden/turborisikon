@@ -341,9 +341,17 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         const defender = playerById(next, defenderId);
         if (territoriesOwnedCount(next, defenderId) === 0) {
           defender.alive = false;
-          player.currency += defender.currency;
+          const inheritedCurrency = defender.currency;
+          const inheritedArmies = defender.reserve + defender.pendingArmies;
+          player.currency += inheritedCurrency;
+          player.reserve += inheritedArmies;
           defender.currency = 0;
-          log(next, `${defender.name} è stato eliminato! ${player.name} ne eredita i Risikon.`);
+          defender.reserve = 0;
+          defender.pendingArmies = 0;
+          log(
+            next,
+            `${defender.name} è stato eliminato! ${player.name} eredita ${inheritedCurrency}R e ${inheritedArmies} armate di riserva.`
+          );
         }
       }
 
