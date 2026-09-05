@@ -44,6 +44,8 @@ export interface Player {
   currency: number;
   /** Armies bought or earned but not yet placed on the board */
   reserve: number;
+  /** Armate acquistate in questo turno di rinforzo: passano in riserva solo all'inizio della fase di attacco */
+  pendingArmies: number;
   /** identità storica dell'IA (vedi personalities.ts); null per i giocatori umani */
   personalityId: string | null;
   /** turni consecutivi (propri) senza aver tentato nemmeno un attacco: alimenta l'"impazienza" dell'IA */
@@ -87,6 +89,9 @@ export interface LogEntry {
 export interface GameSettings {
   armyCostR: number; // Risikon cost per reserve army purchased
   incomePerTerritory: number; // Risikon earned per owned territory per turn
+  fortifyCostR: number; // Risikon cost per movimento di spostamento (1-5 armate)
+  killRewardR: number; // Risikon guadagnati per ogni armata nemica distrutta in un attacco
+  conquestBonusR: number; // Risikon guadagnati in più per la conquista di un territorio
 }
 
 export interface GameState {

@@ -142,7 +142,9 @@ export function decideReinforcement(state: GameState, playerId: string): GameAct
     actions.push({ type: "BUY_ARMIES", playerId, count: buyCount });
   }
 
-  let reserve = player.reserve + buyCount;
+  // le armate appena acquistate non sono ancora in riserva: diventano disponibili
+  // solo dall'inizio della fase di attacco (quindi dal prossimo turno utile)
+  let reserve = player.reserve;
   const owned = ownedIds(state, playerId);
   const borders = owned
     .map((id) => ({
@@ -229,6 +231,8 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
 /** Decide un eventuale spostamento di rinforzo verso il fronte più debole. */
 export function decideFortify(state: GameState, playerId: string): GameAction | null {
   const player = state.players.find((p) => p.id === playerId)!;
+  if (player.currency < state.settings.fortifyCostR) return null;
+
   const personality = personalityById(player.personalityId);
   const owned = ownedIds(state, playerId);
   const scored = owned.map((id) => ({ id, score: borderScore(state, playerId, id) }));
@@ -249,7 +253,7 @@ export function decideFortify(state: GameState, playerId: string): GameAction | 
   for (const candidate of interior) {
     if (isReachable(state, playerId, candidate.id, weakestBorder.id)) {
       const spare = state.territories[candidate.id].armies - 1;
-      const count = Math.max(1, Math.round(spare * (0.4 + 0.6 * personality.defensiveBias)));
+      const count = Math.min(5, Math.max(1, Math.round(spare * (0.4 + 0.6 * personality.defensiveBias))));
       if (count > 0) {
         return { type: "FORTIFY", playerId, from: candidate.id, to: weakestBorder.id, count };
       }

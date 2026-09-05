@@ -470,6 +470,13 @@ export default function RoomPage() {
               <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>
                 Riserva: <strong style={{ color: "var(--ok)" }}>{myPlayer.reserve}</strong> armate — Risikon:{" "}
                 <strong style={{ color: "var(--accent)" }}>{myPlayer.currency}R</strong>
+                {myPlayer.pendingArmies > 0 && (
+                  <>
+                    {" "}
+                    — in arrivo dal prossimo turno:{" "}
+                    <strong style={{ color: "var(--accent)" }}>{myPlayer.pendingArmies}</strong>
+                  </>
+                )}
               </p>
 
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -490,6 +497,10 @@ export default function RoomPage() {
                   Compra armate ({game.settings.armyCostR}R cad.)
                 </button>
               </div>
+              <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
+                Le armate comprate ora entrano in riserva solo all&apos;inizio della fase di attacco: potrai
+                piazzarle a partire dal tuo prossimo turno.
+              </p>
 
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Quantità da piazzare:</span>
@@ -595,11 +606,14 @@ export default function RoomPage() {
             </div>
           )}
 
-          {isMyTurn && game.phase === "fortify" && (
+          {isMyTurn && game.phase === "fortify" && myPlayer && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <p style={{ fontSize: 12, color: "var(--text-dim)", margin: 0 }}>
-                Sposta armate tra due tuoi territori collegati da una catena di territori tuoi. Un solo movimento
-                per turno.
+                Sposta gruppi da 1 a 5 armate tra due tuoi territori collegati da una catena di territori tuoi.
+                Ogni spostamento costa {game.settings.fortifyCostR}R: puoi farne quanti te lo permette il credito.
+              </p>
+              <p style={{ fontSize: 13, color: "var(--text-dim)", margin: 0 }}>
+                Risikon: <strong style={{ color: "var(--accent)" }}>{myPlayer.currency}R</strong>
               </p>
               {selectedFrom && (
                 <p style={{ fontSize: 13, margin: 0 }}>
@@ -614,30 +628,39 @@ export default function RoomPage() {
               )}
               {selectedFrom && selectedTo && (
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <input
-                    className="input"
-                    type="number"
-                    min={1}
-                    max={Math.max(1, fromArmies - 1)}
-                    value={moveCount}
-                    onChange={(e) => setMoveCount(Number(e.target.value))}
-                    style={{ width: 70 }}
-                  />
+                  <span style={{ fontSize: 13 }}>Armate:</span>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      className="btn"
+                      style={{
+                        padding: "6px 10px",
+                        background: moveCount === n ? "var(--accent)" : undefined,
+                        color: moveCount === n ? "#1a1200" : undefined,
+                      }}
+                      disabled={n > fromArmies - 1}
+                      onClick={() => setMoveCount(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
                   <button
                     className="btn"
+                    style={{ marginLeft: "auto" }}
+                    disabled={myPlayer.currency < game.settings.fortifyCostR}
                     onClick={() => {
                       dispatch({
                         type: "FORTIFY",
                         playerId: myId,
                         from: selectedFrom,
                         to: selectedTo,
-                        count: moveCount,
+                        count: Math.min(moveCount, Math.max(1, fromArmies - 1)),
                       });
                       setSelectedFrom(null);
                       setSelectedTo(null);
                     }}
                   >
-                    Sposta
+                    Sposta (-{game.settings.fortifyCostR}R)
                   </button>
                 </div>
               )}

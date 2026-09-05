@@ -4,6 +4,9 @@ import { GameState } from "./types";
 export const DEFAULT_SETTINGS = {
   armyCostR: 100,
   incomePerTerritory: 50,
+  fortifyCostR: 50,
+  killRewardR: 25,
+  conquestBonusR: 100,
 };
 
 export function territoriesOwnedBy(state: GameState, playerId: string): string[] {

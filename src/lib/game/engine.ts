@@ -47,6 +47,7 @@ export function addPlayer(
     alive: true,
     currency: 0,
     reserve: 0,
+    pendingArmies: 0,
     personalityId,
     turnsSinceLastAttack: 0,
   });
@@ -236,8 +237,8 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       const cost = action.count * next.settings.armyCostR;
       if (cost > player.currency) throw new GameError("Risikon insufficienti");
       player.currency -= cost;
-      player.reserve += action.count;
-      log(next, `${player.name} acquista ${action.count} armate per ${cost}R.`);
+      player.pendingArmies += action.count;
+      log(next, `${player.name} acquista ${action.count} armate per ${cost}R (disponibili dal prossimo turno).`);
       break;
     }
     case "PLACE_ARMIES": {
@@ -272,6 +273,11 @@ export function applyAction(state: GameState, action: GameAction): GameState {
     case "END_REINFORCE": {
       assertCurrentPlayer(next, action.playerId);
       assertPhase(next, "reinforce");
+      const player = playerById(next, action.playerId);
+      if (player.pendingArmies > 0) {
+        player.reserve += player.pendingArmies;
+        player.pendingArmies = 0;
+      }
       next.phase = "attack";
       next.attackedThisTurn = false;
       break;
@@ -318,6 +324,11 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         }
       } while (action.untilDeath && maxAttackerDice(from.armies) >= 1 && rounds < 1000);
 
+      // ricompensa in Risikon per le armate nemiche distrutte in questo attacco
+      if (totalDefenderLosses > 0) {
+        player.currency += totalDefenderLosses * next.settings.killRewardR;
+      }
+
       if (conquered) {
         const min = Math.min(lastResult.attackerDice.length, from.armies - 1);
         const max = Math.max(min, from.armies - 1);
@@ -325,6 +336,7 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         to.armies = 0;
         next.pendingConquest = { from: action.from, to: action.to, min, max };
         next.phase = "conquer";
+        player.currency += next.settings.conquestBonusR;
 
         const defender = playerById(next, defenderId);
         if (territoriesOwnedCount(next, defenderId) === 0) {
@@ -347,6 +359,9 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         rounds,
         conquered,
       };
+      const earnedR =
+        totalDefenderLosses * next.settings.killRewardR + (conquered ? next.settings.conquestBonusR : 0);
+      const earnedSuffix = earnedR > 0 ? ` (+${earnedR}R)` : "";
       if (rounds === 1) {
         log(
           next,
@@ -354,14 +369,14 @@ export function applyAction(state: GameState, action: GameAction): GameState {
             ","
           )}] vs [${lastResult.defenderDice.join(",")}] → attaccante -${totalAttackerLosses}, difensore -${totalDefenderLosses}${
             conquered ? " — TERRITORIO CONQUISTATO" : ""
-          }.`
+          }${earnedSuffix}.`
         );
       } else {
         log(
           next,
           `${player.name} attacca ${action.to} da ${action.from} fino alla morte (${rounds} scontri): attaccante -${totalAttackerLosses}, difensore -${totalDefenderLosses}${
             conquered ? " — TERRITORIO CONQUISTATO" : " — attacco esaurito, armate insufficienti per continuare"
-          }.`
+          }${earnedSuffix}.`
         );
       }
 
@@ -404,15 +419,26 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       if (from.owner !== action.playerId || to.owner !== action.playerId) {
         throw new GameError("Entrambi i territori devono essere tuoi");
       }
-      if (action.count <= 0 || action.count >= from.armies) {
+      if (action.count < 1 || action.count > 5) {
+        throw new GameError("Puoi spostare da 1 a 5 armate per ogni movimento");
+      }
+      if (action.count >= from.armies) {
         throw new GameError("Devi lasciare almeno 1 armata nel territorio di partenza");
       }
       if (!isConnectedThroughOwnTerritory(next, action.playerId, action.from, action.to)) {
         throw new GameError("I territori non sono collegati da un percorso di tuoi territori");
       }
+      const fortifyCost = next.settings.fortifyCostR;
+      if (player.currency < fortifyCost) {
+        throw new GameError(`Servono ${fortifyCost}R per questo spostamento (hai ${player.currency}R)`);
+      }
+      player.currency -= fortifyCost;
       from.armies -= action.count;
       to.armies += action.count;
-      log(next, `${player.name} sposta ${action.count} armate da ${action.from} a ${action.to}.`);
+      log(
+        next,
+        `${player.name} sposta ${action.count} armate da ${action.from} a ${action.to} (-${fortifyCost}R).`
+      );
       break;
     }
     case "END_FORTIFY": {
