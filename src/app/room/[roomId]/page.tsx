@@ -550,22 +550,40 @@ export default function RoomPage() {
                       {d}
                     </button>
                   ))}
-                  <button
-                    className="btn btn-danger"
-                    style={{ marginLeft: "auto" }}
-                    onClick={() => {
-                      dispatch({
-                        type: "ATTACK",
-                        playerId: myId,
-                        from: selectedFrom,
-                        to: selectedTo,
-                        dice: Math.min(diceCount, maxDice),
-                      });
-                      setSelectedTo(null);
-                    }}
-                  >
-                    Attacca!
-                  </button>
+                  <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => {
+                        dispatch({
+                          type: "ATTACK",
+                          playerId: myId,
+                          from: selectedFrom,
+                          to: selectedTo,
+                          dice: Math.min(diceCount, maxDice),
+                        });
+                        setSelectedTo(null);
+                      }}
+                    >
+                      Attacca!
+                    </button>
+                    <button
+                      className="btn btn-danger"
+                      title="Continua ad attaccare questo territorio, dadi al massimo, finché non lo conquisti o non ti restano abbastanza armate per continuare."
+                      onClick={() => {
+                        dispatch({
+                          type: "ATTACK",
+                          playerId: myId,
+                          from: selectedFrom,
+                          to: selectedTo,
+                          dice: maxDice,
+                          untilDeath: true,
+                        });
+                        setSelectedTo(null);
+                      }}
+                    >
+                      Attacca fino alla morte
+                    </button>
+                  </div>
                 </div>
               )}
               {game.lastBattle && (
@@ -675,10 +693,14 @@ function BattleResult({ battle, players }: { battle: NonNullable<GameState["last
   return (
     <div style={{ background: "var(--panel-2)", borderRadius: 8, padding: 10, fontSize: 12 }}>
       <div>
-        <strong style={{ color: attacker?.color }}>{attacker?.name}</strong> [{battle.attackerDice.join(", ")}] vs{" "}
-        <strong style={{ color: defender?.color }}>{defender?.name}</strong> [{battle.defenderDice.join(", ")}]
+        <strong style={{ color: attacker?.color }}>{attacker?.name}</strong>{" "}
+        {battle.rounds > 1 ? `(ultimo lancio: ${battle.attackerDice.join(", ")})` : `[${battle.attackerDice.join(", ")}]`}{" "}
+        vs{" "}
+        <strong style={{ color: defender?.color }}>{defender?.name}</strong>{" "}
+        {battle.rounds > 1 ? `(ultimo: ${battle.defenderDice.join(", ")})` : `[${battle.defenderDice.join(", ")}]`}
       </div>
       <div style={{ color: "var(--text-dim)", marginTop: 4 }}>
+        {battle.rounds > 1 && <>Scontri: {battle.rounds} — </>}
         Perdite attaccante: {battle.attackerLosses} — Perdite difensore: {battle.defenderLosses}
         {battle.conquered && <span style={{ color: "var(--accent)" }}> — Territorio conquistato!</span>}
       </div>

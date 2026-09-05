@@ -64,6 +64,8 @@ export interface PendingBattle {
   defenderDice: number[];
   attackerLosses: number;
   defenderLosses: number;
+  /** numero di scontri (lanci di dadi) avvenuti in questo attacco: >1 se eseguito "fino alla morte" */
+  rounds: number;
   conquered: boolean;
 }
 
@@ -119,6 +121,9 @@ export type GameAction =
       from: string;
       to: string;
       dice: number;
+      /** se true, attacca ripetutamente lo stesso territorio (dadi sempre massimi) finché non lo conquista
+       *  o non gli restano abbastanza armate per continuare */
+      untilDeath?: boolean;
     }
   | { type: "MOVE_IN_ARMIES"; playerId: string; count: number }
   | { type: "END_ATTACK"; playerId: string }

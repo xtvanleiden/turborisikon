@@ -291,18 +291,35 @@ export function applyAction(state: GameState, action: GameAction): GameState {
 
       const maxAtk = maxAttackerDice(from.armies);
       if (maxAtk < 1) throw new GameError("Armate insufficienti per attaccare");
-      const attackerDiceCount = Math.min(action.dice, maxAtk);
-      const defenderDiceCount = maxDefenderDice(to.armies);
       const defenderId = to.owner!;
 
-      const result = resolveCombat(attackerDiceCount, defenderDiceCount);
-      from.armies -= result.attackerLosses;
-      to.armies -= result.defenderLosses;
-
+      let totalAttackerLosses = 0;
+      let totalDefenderLosses = 0;
+      let rounds = 0;
       let conquered = false;
-      if (to.armies <= 0) {
-        conquered = true;
-        const min = Math.min(attackerDiceCount, from.armies - 1);
+      let lastResult: ReturnType<typeof resolveCombat> | null = null;
+
+      do {
+        const attackerDiceCount = action.untilDeath
+          ? Math.min(3, maxAttackerDice(from.armies))
+          : Math.min(action.dice, maxAttackerDice(from.armies));
+        const defenderDiceCount = maxDefenderDice(to.armies);
+
+        lastResult = resolveCombat(attackerDiceCount, defenderDiceCount);
+        from.armies -= lastResult.attackerLosses;
+        to.armies -= lastResult.defenderLosses;
+        totalAttackerLosses += lastResult.attackerLosses;
+        totalDefenderLosses += lastResult.defenderLosses;
+        rounds += 1;
+
+        if (to.armies <= 0) {
+          conquered = true;
+          break;
+        }
+      } while (action.untilDeath && maxAttackerDice(from.armies) >= 1 && rounds < 1000);
+
+      if (conquered) {
+        const min = Math.min(lastResult.attackerDice.length, from.armies - 1);
         const max = Math.max(min, from.armies - 1);
         to.owner = action.playerId;
         to.armies = 0;
@@ -323,20 +340,30 @@ export function applyAction(state: GameState, action: GameAction): GameState {
         to: action.to,
         attackerId: action.playerId,
         defenderId,
-        attackerDice: result.attackerDice,
-        defenderDice: result.defenderDice,
-        attackerLosses: result.attackerLosses,
-        defenderLosses: result.defenderLosses,
+        attackerDice: lastResult.attackerDice,
+        defenderDice: lastResult.defenderDice,
+        attackerLosses: totalAttackerLosses,
+        defenderLosses: totalDefenderLosses,
+        rounds,
         conquered,
       };
-      log(
-        next,
-        `${player.name} attacca ${action.to} da ${action.from}: [${result.attackerDice.join(
-          ","
-        )}] vs [${result.defenderDice.join(",")}] → attaccante -${result.attackerLosses}, difensore -${result.defenderLosses}${
-          conquered ? " — TERRITORIO CONQUISTATO" : ""
-        }.`
-      );
+      if (rounds === 1) {
+        log(
+          next,
+          `${player.name} attacca ${action.to} da ${action.from}: [${lastResult.attackerDice.join(
+            ","
+          )}] vs [${lastResult.defenderDice.join(",")}] → attaccante -${totalAttackerLosses}, difensore -${totalDefenderLosses}${
+            conquered ? " — TERRITORIO CONQUISTATO" : ""
+          }.`
+        );
+      } else {
+        log(
+          next,
+          `${player.name} attacca ${action.to} da ${action.from} fino alla morte (${rounds} scontri): attaccante -${totalAttackerLosses}, difensore -${totalDefenderLosses}${
+            conquered ? " — TERRITORIO CONQUISTATO" : " — attacco esaurito, armate insufficienti per continuare"
+          }.`
+        );
+      }
 
       checkWinner(next);
       break;
