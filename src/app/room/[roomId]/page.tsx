@@ -353,7 +353,9 @@ export default function RoomPage() {
           <h3 style={{ marginTop: 0, marginBottom: 10, fontSize: 15 }}>Giocatori</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {game.players.map((p) => {
-              const territoryCount = Object.values(game.territories).filter((t) => t.owner === p.id).length;
+              const ownedTerritories = Object.values(game.territories).filter((t) => t.owner === p.id);
+              const territoryCount = ownedTerritories.length;
+              const totalArmies = ownedTerritories.reduce((sum, t) => sum + t.armies, 0);
               const isTurn = currentPlayer?.id === p.id;
               return (
                 <div
@@ -377,6 +379,7 @@ export default function RoomPage() {
                     {p.name} {isTurn && "▶"}
                   </span>
                   <span style={{ color: "var(--text-dim)" }}>{territoryCount} terr.</span>
+                  <span style={{ color: "var(--text-dim)" }}>{totalArmies} arm.</span>
                   <span style={{ color: "var(--accent)" }}>{p.currency}R</span>
                   <span style={{ color: "var(--ok)" }}>res:{p.reserve}</span>
                 </div>
