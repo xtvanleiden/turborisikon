@@ -10,10 +10,15 @@ const CONTINENT_COLORS: Record<ContinentId, string> = {
   africa: "#a3e635",
   asia: "#f472b6",
   oceania: "#c084fc",
+  antartide: "#94a3b8",
 };
 
 const W = 1000;
 const H = 620;
+
+// collegamenti che "avvolgono" la mappa (i due territori sono ai lati opposti):
+// invece di una linea diretta lunghissima, si disegnano due tratti verso il bordo esterno
+const WRAP_EDGES = new Set(["alaska|kamchatka", "hawaii|usa_ovest"]);
 
 interface Props {
   state: GameState;
@@ -28,12 +33,17 @@ export default function Board({ state, players, selectedFrom, validTargets, onTe
 
   const edgesDrawn = new Set<string>();
   const edges: [string, string][] = [];
+  const wrapEdges: [string, string][] = [];
   for (const t of TERRITORIES) {
     for (const adj of t.adjacent) {
       const key = [t.id, adj].sort().join("|");
       if (edgesDrawn.has(key)) continue;
       edgesDrawn.add(key);
-      edges.push([t.id, adj]);
+      if (WRAP_EDGES.has(key)) {
+        wrapEdges.push([t.id, adj]);
+      } else {
+        edges.push([t.id, adj]);
+      }
     }
   }
 
@@ -70,6 +80,22 @@ export default function Board({ state, players, selectedFrom, validTargets, onTe
               strokeWidth={1.5}
             />
           );
+        })}
+        {wrapEdges.flatMap(([a, b]) => {
+          const ta = TERRITORY_MAP[a];
+          const tb = TERRITORY_MAP[b];
+          return [ta, tb].map((t) => (
+            <line
+              key={`wrap-${t.id}`}
+              x1={t.x * W}
+              y1={t.y * H}
+              x2={t.x < 0.5 ? 0 : W}
+              y2={t.y * H}
+              stroke="#2a3a63"
+              strokeWidth={1.5}
+              strokeDasharray="5 4"
+            />
+          ));
         })}
         {TERRITORIES.map((t) => {
           const ts = state.territories[t.id];

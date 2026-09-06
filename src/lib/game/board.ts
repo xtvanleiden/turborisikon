@@ -19,6 +19,7 @@ const RAW_TERRITORIES: RawTerritory[] = [
   { id: "usa_ovest", name: "Stati Uniti Occidentali", continent: "nord_america", x: 0.14, y: 0.34 },
   { id: "usa_est", name: "Stati Uniti Orientali", continent: "nord_america", x: 0.24, y: 0.34 },
   { id: "america_centrale", name: "America Centrale", continent: "nord_america", x: 0.16, y: 0.46 },
+  { id: "hawaii", name: "Hawaii", continent: "nord_america", x: 0.97, y: 0.24 },
   // Sud America
   { id: "venezuela", name: "Venezuela", continent: "sud_america", x: 0.22, y: 0.56 },
   { id: "peru", name: "Perù", continent: "sud_america", x: 0.2, y: 0.68 },
@@ -57,6 +58,10 @@ const RAW_TERRITORIES: RawTerritory[] = [
   { id: "nuova_guinea", name: "Nuova Guinea", continent: "oceania", x: 0.86, y: 0.52 },
   { id: "australia_ovest", name: "Australia Occidentale", continent: "oceania", x: 0.8, y: 0.68 },
   { id: "australia_est", name: "Australia Orientale", continent: "oceania", x: 0.88, y: 0.68 },
+  // Antartide
+  { id: "antartide_occidentale", name: "Antartide Occidentale", continent: "antartide", x: 0.4, y: 0.88 },
+  { id: "antartide_centrale", name: "Antartide Centrale", continent: "antartide", x: 0.46, y: 0.92 },
+  { id: "antartide_orientale", name: "Antartide Orientale", continent: "antartide", x: 0.52, y: 0.88 },
 ];
 
 const EDGES: [string, string][] = [
@@ -143,6 +148,14 @@ const EDGES: [string, string][] = [
   ["nuova_guinea", "australia_ovest"],
   ["nuova_guinea", "australia_est"],
   ["australia_ovest", "australia_est"],
+  ["hawaii", "usa_ovest"],
+  ["hawaii", "giappone"],
+  // Antartide
+  ["antartide_occidentale", "argentina"],
+  ["antartide_occidentale", "antartide_centrale"],
+  ["antartide_centrale", "antartide_orientale"],
+  ["antartide_centrale", "sud_africa"],
+  ["antartide_orientale", "australia_ovest"],
 ];
 
 const CONTINENT_META: Record<ContinentId, { name: string; bonus: number }> = {
@@ -152,6 +165,7 @@ const CONTINENT_META: Record<ContinentId, { name: string; bonus: number }> = {
   africa: { name: "Africa", bonus: 3 },
   asia: { name: "Asia", bonus: 7 },
   oceania: { name: "Oceania", bonus: 2 },
+  antartide: { name: "Antartide", bonus: 2 },
 };
 
 const adjacencyMap = new Map<string, Set<string>>();

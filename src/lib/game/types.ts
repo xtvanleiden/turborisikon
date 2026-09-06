@@ -4,7 +4,8 @@ export type ContinentId =
   | "europa"
   | "africa"
   | "asia"
-  | "oceania";
+  | "oceania"
+  | "antartide";
 
 export interface Continent {
   id: ContinentId;
