@@ -59,6 +59,7 @@ function broadcastGame(io: Server, room: Room) {
 
 const AI_ATTACK_DELAY_MS = 550;
 const AI_REINFORCE_DELAY_MS = 250;
+const MAX_AI_FORTIFY_MOVES_PER_TURN = 8;
 
 async function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -112,8 +113,12 @@ async function runAiIfNeeded(io: Server, room: Room) {
           await delay(150);
         }
       } else if (cur.phase === "fortify") {
-        const action = decideFortify(cur, curId);
-        if (action) {
+        // ora gli spostamenti a pagamento sono ripetibili nello stesso turno: l'IA
+        // continua a svuotare i territori interni verso i fronti deboli finché
+        // trova mosse utili o finisce i Risikon (con un tetto di sicurezza).
+        for (let moves = 0; moves < MAX_AI_FORTIFY_MOVES_PER_TURN; moves++) {
+          const action = decideFortify(room.gameState, curId);
+          if (!action) break;
           room.gameState = applyAction(room.gameState, action);
           broadcastGame(io, room);
           await delay(AI_REINFORCE_DELAY_MS);

@@ -449,6 +449,9 @@ export default function RoomPage() {
                   onChange={(e) => setConquerCount(Number(e.target.value))}
                   style={{ width: 70 }}
                 />
+                <button className="btn" onClick={() => setConquerCount(game.pendingConquest!.max)}>
+                  Massimo
+                </button>
                 <button
                   className="btn btn-primary"
                   onClick={() =>

@@ -228,7 +228,34 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
   return { type: "ATTACK", playerId, from: chosen.from, to: chosen.to, dice };
 }
 
-/** Decide un eventuale spostamento di rinforzo verso il fronte più debole. */
+// una pila interna più grande di questa soglia va svuotata quasi sempre,
+// indipendentemente dalla personalità: nessun comandante lascia marcire le riserve nell'entroterra
+const URGENT_INTERIOR_STOCKPILE = 10;
+
+/** Trova, tra i territori indicati, il più vicino raggiungibile da `start` passando solo per territori propri. */
+function nearestReachableAmong(
+  state: GameState,
+  playerId: string,
+  start: string,
+  targets: Set<string>
+): string | null {
+  const visited = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const adj of TERRITORY_MAP[current].adjacent) {
+      if (visited.has(adj)) continue;
+      if (state.territories[adj]?.owner !== playerId) continue;
+      if (targets.has(adj)) return adj;
+      visited.add(adj);
+      queue.push(adj);
+    }
+  }
+  return null;
+}
+
+/** Decide un eventuale spostamento di rinforzo: svuota i territori interni (senza confini nemici)
+ *  verso il fronte raggiungibile più vicino, così le armate non restano intrappolate nell'entroterra. */
 export function decideFortify(state: GameState, playerId: string): GameAction | null {
   const player = state.players.find((p) => p.id === playerId)!;
   if (player.currency < state.settings.fortifyCostR) return null;
@@ -237,43 +264,26 @@ export function decideFortify(state: GameState, playerId: string): GameAction | 
   const owned = ownedIds(state, playerId);
   const scored = owned.map((id) => ({ id, score: borderScore(state, playerId, id) }));
 
-  const weakestBorder = scored
-    .filter((s) => s.score > -1)
-    .sort((a, b) => b.score - a.score)[0];
-  if (!weakestBorder) return null;
-
-  // i condottieri meno difensivi a volte preferiscono continuare a espandersi
-  // piuttosto che ritirare truppe verso un fronte debole
-  if (Math.random() > 0.3 + personality.defensiveBias * 0.7) return null;
+  const frontIds = new Set(scored.filter((s) => s.score > -1).map((s) => s.id));
+  if (frontIds.size === 0) return null;
 
   const interior = scored
-    .filter((s) => s.score === -1 && state.territories[s.id].armies > 1 && s.id !== weakestBorder.id)
+    .filter((s) => s.score === -1 && state.territories[s.id].armies > 1)
     .sort((a, b) => state.territories[b.id].armies - state.territories[a.id].armies);
 
   for (const candidate of interior) {
-    if (isReachable(state, playerId, candidate.id, weakestBorder.id)) {
-      const spare = state.territories[candidate.id].armies - 1;
-      const count = Math.min(5, Math.max(1, Math.round(spare * (0.4 + 0.6 * personality.defensiveBias))));
-      if (count > 0) {
-        return { type: "FORTIFY", playerId, from: candidate.id, to: weakestBorder.id, count };
-      }
-    }
+    const spare = state.territories[candidate.id].armies - 1;
+    const urgent = spare >= URGENT_INTERIOR_STOCKPILE;
+    // sotto la soglia critica, i condottieri meno difensivi a volte preferiscono continuare
+    // a espandersi piuttosto che ritirare truppe; oltre la soglia si muovono quasi sempre
+    if (!urgent && Math.random() > 0.5 + personality.defensiveBias * 0.5) continue;
+
+    const nearestFront = nearestReachableAmong(state, playerId, candidate.id, frontIds);
+    if (!nearestFront) continue;
+
+    const intensity = urgent ? 0.7 : 0.4 + 0.6 * personality.defensiveBias;
+    const count = Math.min(5, Math.max(1, Math.round(spare * intensity)));
+    return { type: "FORTIFY", playerId, from: candidate.id, to: nearestFront, count };
   }
   return null;
-}
-
-function isReachable(state: GameState, playerId: string, start: string, target: string): boolean {
-  const visited = new Set([start]);
-  const queue = [start];
-  while (queue.length) {
-    const current = queue.shift()!;
-    if (current === target) return true;
-    for (const adj of TERRITORY_MAP[current].adjacent) {
-      if (visited.has(adj)) continue;
-      if (state.territories[adj]?.owner !== playerId) continue;
-      visited.add(adj);
-      queue.push(adj);
-    }
-  }
-  return visited.has(target);
 }
