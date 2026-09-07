@@ -7,7 +7,7 @@ import { TERRITORY_MAP } from "@/lib/game/board";
 import { maxArmiesPurchasable } from "@/lib/game/economy";
 import { maxAttackerDice, maxDefenderDice } from "@/lib/game/combat";
 import { currentPlayerId } from "@/lib/game/engine";
-import { personalityById } from "@/lib/game/personalities";
+import { PERSONALITIES, personalityById } from "@/lib/game/personalities";
 import { GameState, Player } from "@/lib/game/types";
 import Board from "@/components/Board";
 
@@ -40,6 +40,7 @@ export default function RoomPage() {
   const [diceCount, setDiceCount] = useState(3);
   const [moveCount, setMoveCount] = useState(1);
   const [conquerCount, setConquerCount] = useState(1);
+  const [selectedPersonalityId, setSelectedPersonalityId] = useState(PERSONALITIES[0].id);
 
   useEffect(() => {
     const socket = getSocket();
@@ -79,9 +80,9 @@ export default function RoomPage() {
     });
   }
 
-  function addAi() {
+  function addAi(personalityId?: string) {
     const socket = getSocket();
-    socket.emit("room:addAi", { roomId, playerId: myId });
+    socket.emit("room:addAi", { roomId, playerId: myId, personalityId });
   }
 
   function removePlayer(targetId: string) {
@@ -290,13 +291,33 @@ export default function RoomPage() {
           </div>
 
           {isHost && (
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={addAi} disabled={room.players.length >= 6}>
-                + Aggiungi IA
-              </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn" onClick={() => addAi()} disabled={room.players.length >= 6}>
+                  + Aggiungi IA (casuale)
+                </button>
+                <select
+                  className="input"
+                  value={selectedPersonalityId}
+                  onChange={(e) => setSelectedPersonalityId(e.target.value)}
+                  style={{ flex: 1 }}
+                >
+                  {PERSONALITIES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="btn"
+                  onClick={() => addAi(selectedPersonalityId)}
+                  disabled={room.players.length >= 6}
+                >
+                  Aggiungi
+                </button>
+              </div>
               <button
                 className="btn btn-primary"
-                style={{ flex: 1 }}
                 onClick={startGame}
                 disabled={room.players.length < 2}
               >

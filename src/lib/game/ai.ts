@@ -1,4 +1,5 @@
 import { CONTINENTS, TERRITORY_MAP } from "./board";
+import { attackerWinProbability } from "./combat";
 import { maxArmiesPurchasable } from "./economy";
 import { personalityById } from "./personalities";
 import { GameAction, GameState } from "./types";
@@ -9,7 +10,9 @@ function ownedIds(state: GameState, playerId: string): string[] {
     .map(([id]) => id);
 }
 
-function borderScore(state: GameState, playerId: string, territoryId: string): number {
+/** null se il territorio non confina con nessun nemico (territorio interno);
+ *  altrimenti la differenza (armate nemiche più forti - armate proprie): più alta, più a rischio. */
+function borderScore(state: GameState, playerId: string, territoryId: string): number | null {
   const territory = TERRITORY_MAP[territoryId];
   const own = state.territories[territoryId].armies;
   let enemyMax = 0;
@@ -21,8 +24,22 @@ function borderScore(state: GameState, playerId: string, territoryId: string): n
       enemyMax = Math.max(enemyMax, t.armies);
     }
   }
-  if (!hasEnemyBorder) return -1;
+  if (!hasEnemyBorder) return null;
   return enemyMax - own;
+}
+
+/** Probabilità che il territorio resista se il vicino nemico più forte lo attaccasse fino alla morte
+ *  (1 = nessuna minaccia). Usata per dare priorità ai rinforzi su basi solide, non su un semplice conteggio. */
+function holdProbability(state: GameState, playerId: string, territoryId: string): number {
+  const territory = TERRITORY_MAP[territoryId];
+  const own = state.territories[territoryId].armies;
+  let enemyMax = 0;
+  for (const adj of territory.adjacent) {
+    const t = state.territories[adj];
+    if (t.owner && t.owner !== playerId) enemyMax = Math.max(enemyMax, t.armies);
+  }
+  if (enemyMax === 0) return 1;
+  return 1 - attackerWinProbability(enemyMax, own);
 }
 
 /** Frazione (0..1) di un continente già posseduta da playerId: quanto è vicino a completarlo. */
@@ -82,7 +99,7 @@ export function decideSetupPlacement(state: GameState, playerId: string): GameAc
   const owned = ownedIds(state, playerId);
   const borders = owned
     .map((id) => ({ id, score: borderScore(state, playerId, id) }))
-    .filter((b) => b.score > -1)
+    .filter((b): b is { id: string; score: number } => b.score !== null)
     .sort((a, b) => b.score - a.score);
   const targets = borders.length > 0 ? borders : owned.map((id) => ({ id, score: 0 }));
 
@@ -147,13 +164,16 @@ export function decideReinforcement(state: GameState, playerId: string): GameAct
   let reserve = player.reserve;
   const owned = ownedIds(state, playerId);
   const borders = owned
-    .map((id) => ({
-      id,
-      score:
-        borderScore(state, playerId, id) +
-        continentProgress(state, playerId, id) * personality.continentFocus * 3,
-    }))
-    .filter((b) => b.score > -1)
+    .map((id) => {
+      const score = borderScore(state, playerId, id);
+      if (score === null) return null;
+      // priorità di rinforzo basata sulla probabilità REALE che il fronte regga a un attacco
+      // totale del vicino più forte, non su un semplice conteggio di armate
+      const urgency = (1 - holdProbability(state, playerId, id)) * 10;
+      const priority = urgency + continentProgress(state, playerId, id) * personality.continentFocus * 3;
+      return { id, score: priority };
+    })
+    .filter((b): b is { id: string; score: number } => b !== null)
     .sort((a, b) => b.score - a.score);
 
   const targets = borders.length > 0 ? borders : owned.map((id) => ({ id, score: 0 }));
@@ -174,10 +194,19 @@ export function decideReinforcement(state: GameState, playerId: string): GameAct
   return actions;
 }
 
-// Quanto si abbassano le soglie di attacco per ogni turno di inattività militare consecutiva.
-const IMPATIENCE_RATIO_STEP = 0.05;
-const IMPATIENCE_RATIO_FLOOR = 0.8;
+// Quanto si abbassa la soglia minima di probabilità di vittoria per ogni turno di
+// inattività militare consecutiva: anche il condottiero più prudente, prima o poi, attacca.
+const IMPATIENCE_PROB_STEP = 0.02;
+const IMPATIENCE_PROB_FLOOR = 0.3;
 const IMPATIENCE_ARMIES_STEP_TURNS = 8; // ogni N turni di inattività, il presidio minimo richiesto scende di 1
+
+// oltre questa probabilità di vittoria, l'IA si impegna a fondo (attacco "fino alla morte")
+// invece di rivalutare il bersaglio migliore a ogni singolo round
+const COMMIT_UNTIL_DEATH_PROBABILITY = 0.75;
+
+// bonus di punteggio per un attacco che eliminerebbe del tutto un avversario
+// (ne eredita riserva e Risikon): vale per qualsiasi personalità, è buon senso strategico
+const ELIMINATION_BONUS = 4;
 
 /** Restituisce la prossima mossa di attacco dell'IA, o null se ha finito. */
 export function decideNextAttack(state: GameState, playerId: string): GameAction | null {
@@ -186,19 +215,19 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
   const owned = ownedIds(state, playerId);
   const leaderId = leaderPlayerId(state);
 
-  // Più turni passano senza che questo giocatore attacchi, più diventa disposto a rischiare:
-  // anche il condottiero più prudente, prima o poi, finisce per attaccare.
+  // Più turni passano senza che questo giocatore attacchi, più diventa disposto a rischiare.
   const inactivity = player.turnsSinceLastAttack;
-  const attackRatioThreshold = Math.max(
-    IMPATIENCE_RATIO_FLOOR,
-    personality.attackRatioThreshold - inactivity * IMPATIENCE_RATIO_STEP
+  const minWinProbability = Math.max(
+    IMPATIENCE_PROB_FLOOR,
+    personality.minWinProbability - inactivity * IMPATIENCE_PROB_STEP
   );
   const minArmiesToKeepAttacking = Math.max(
     1,
     personality.minArmiesToKeepAttacking - Math.floor(inactivity / IMPATIENCE_ARMIES_STEP_TURNS)
   );
 
-  const candidates: { from: string; to: string; fromArmies: number; score: number }[] = [];
+  const candidates: { from: string; to: string; fromArmies: number; winProbability: number; score: number }[] =
+    [];
 
   for (const fromId of owned) {
     const from = state.territories[fromId];
@@ -209,14 +238,16 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
     for (const toId of territory.adjacent) {
       const to = state.territories[toId];
       if (!to.owner || to.owner === playerId) continue;
-      const ratio = from.armies / Math.max(1, to.armies);
-      if (ratio < attackRatioThreshold) continue;
 
-      let score = ratio;
+      const winProbability = attackerWinProbability(from.armies, to.armies);
+      if (winProbability < minWinProbability) continue;
+
+      let score = winProbability;
       score += continentCompletionBonus(state, playerId, toId) * personality.continentFocus * 3;
       if (leaderId && to.owner === leaderId) score += personality.targetLeaderBias * 2;
+      if (ownedIds(state, to.owner).length === 1) score += ELIMINATION_BONUS;
 
-      candidates.push({ from: fromId, to: toId, fromArmies: from.armies, score });
+      candidates.push({ from: fromId, to: toId, fromArmies: from.armies, winProbability, score });
     }
   }
 
@@ -225,7 +256,8 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
   candidates.sort((a, b) => b.score - a.score);
   const chosen = pickWithRandomness(candidates, personality.randomness);
   const dice = Math.min(3, chosen.fromArmies - 1);
-  return { type: "ATTACK", playerId, from: chosen.from, to: chosen.to, dice };
+  const untilDeath = chosen.winProbability >= COMMIT_UNTIL_DEATH_PROBABILITY;
+  return { type: "ATTACK", playerId, from: chosen.from, to: chosen.to, dice, untilDeath };
 }
 
 // una pila interna più grande di questa soglia va svuotata quasi sempre,
@@ -264,11 +296,11 @@ export function decideFortify(state: GameState, playerId: string): GameAction | 
   const owned = ownedIds(state, playerId);
   const scored = owned.map((id) => ({ id, score: borderScore(state, playerId, id) }));
 
-  const frontIds = new Set(scored.filter((s) => s.score > -1).map((s) => s.id));
+  const frontIds = new Set(scored.filter((s) => s.score !== null).map((s) => s.id));
   if (frontIds.size === 0) return null;
 
   const interior = scored
-    .filter((s) => s.score === -1 && state.territories[s.id].armies > 1)
+    .filter((s) => s.score === null && state.territories[s.id].armies > 1)
     .sort((a, b) => state.territories[b.id].armies - state.territories[a.id].armies);
 
   for (const candidate of interior) {

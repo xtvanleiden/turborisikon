@@ -16,7 +16,7 @@ import {
   decideSetupPlacement,
 } from "../lib/game/ai";
 import { makeId } from "../lib/game/id";
-import { pickUnusedPersonality } from "../lib/game/personalities";
+import { personalityById, pickUnusedPersonality } from "../lib/game/personalities";
 import { GameAction, GameState } from "../lib/game/types";
 
 interface Room {
@@ -195,20 +195,30 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     }
   );
 
-  socket.on("room:addAi", (payload: { roomId: string; playerId: string }, ack?: (res: any) => void) => {
-    const room = rooms.get(payload.roomId);
-    if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
-    if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può farlo" });
-    try {
-      const usedPersonalities = room.gameState.players.map((p) => p.personalityId);
-      const personality = pickUnusedPersonality(usedPersonalities);
-      room.gameState = addPlayer(room.gameState, personality.name, "ai", undefined, personality.id);
-      ack?.({ ok: true });
-      broadcastRoom(io, room);
-    } catch (e) {
-      ack?.({ ok: false, error: e instanceof Error ? e.message : "Errore" });
+  socket.on(
+    "room:addAi",
+    (
+      payload: { roomId: string; playerId: string; personalityId?: string },
+      ack?: (res: any) => void
+    ) => {
+      const room = rooms.get(payload.roomId);
+      if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
+      if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può farlo" });
+      try {
+        const existingPlayers = room.gameState.players;
+        const personality = payload.personalityId
+          ? personalityById(payload.personalityId)
+          : pickUnusedPersonality(existingPlayers.map((p) => p.personalityId));
+        const duplicates = existingPlayers.filter((p) => p.personalityId === personality.id).length;
+        const name = duplicates > 0 ? `${personality.name} (${duplicates + 1})` : personality.name;
+        room.gameState = addPlayer(room.gameState, name, "ai", undefined, personality.id);
+        ack?.({ ok: true });
+        broadcastRoom(io, room);
+      } catch (e) {
+        ack?.({ ok: false, error: e instanceof Error ? e.message : "Errore" });
+      }
     }
-  });
+  );
 
   socket.on(
     "room:removePlayer",

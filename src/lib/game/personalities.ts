@@ -11,8 +11,9 @@ export interface AiPersonality {
   ambushThreshold: number | null;
 
   // --- aggressività / rischio in attacco ---
-  /** rapporto minimo armate attaccante/difensore per considerare un attacco conveniente */
-  attackRatioThreshold: number;
+  /** probabilità minima (0..1) di conquistare il territorio, calcolata esattamente sulla
+   *  meccanica dei dadi, perché l'attacco sia considerato conveniente */
+  minWinProbability: number;
   /** non attacca mai da un territorio che ha meno (o uguale) di queste armate: quanto presidio minimo vuole sempre lasciarsi */
   minArmiesToKeepAttacking: number;
   /** 0..1: quanta casualità nella scelta del bersaglio tra le opzioni migliori (0 = sempre la scelta ottima) */
@@ -36,7 +37,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Conquista tutto ciò che vede, senza mai fermarsi.",
     currencyReserve: 0,
     ambushThreshold: null,
-    attackRatioThreshold: 1.2,
+    minWinProbability: 0.45,
     minArmiesToKeepAttacking: 1,
     randomness: 0.1,
     continentFocus: 0.8,
@@ -50,7 +51,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Accumula risorse in silenzio, poi colpisce con forza schiacciante.",
     currencyReserve: 100,
     ambushThreshold: 700,
-    attackRatioThreshold: 1.6,
+    minWinProbability: 0.55,
     minArmiesToKeepAttacking: 2,
     randomness: 0.15,
     continentFocus: 0.5,
@@ -64,7 +65,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Non si ferma mai: ogni fronte è un'occasione per razziare.",
     currencyReserve: 0,
     ambushThreshold: null,
-    attackRatioThreshold: 1.1,
+    minWinProbability: 0.35,
     minArmiesToKeepAttacking: 1,
     randomness: 0.05,
     continentFocus: 0.3,
@@ -78,7 +79,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Attacca solo quando la vittoria è già certa.",
     currencyReserve: 200,
     ambushThreshold: 500,
-    attackRatioThreshold: 2.5,
+    minWinProbability: 0.75,
     minArmiesToKeepAttacking: 3,
     randomness: 0.05,
     continentFocus: 0.6,
@@ -92,7 +93,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Aggira le difese e colpisce dove non te lo aspetti.",
     currencyReserve: 50,
     ambushThreshold: null,
-    attackRatioThreshold: 1.3,
+    minWinProbability: 0.4,
     minArmiesToKeepAttacking: 1,
     randomness: 0.35,
     continentFocus: 0.3,
@@ -106,7 +107,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Conquista con metodo, continente dopo continente.",
     currencyReserve: 100,
     ambushThreshold: null,
-    attackRatioThreshold: 1.5,
+    minWinProbability: 0.5,
     minArmiesToKeepAttacking: 2,
     randomness: 0.1,
     continentFocus: 0.9,
@@ -120,7 +121,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Sposta le sue truppe dove serve, prima che il nemico se ne accorga.",
     currencyReserve: 50,
     ambushThreshold: null,
-    attackRatioThreshold: 1.4,
+    minWinProbability: 0.45,
     minArmiesToKeepAttacking: 2,
     randomness: 0.25,
     continentFocus: 0.4,
@@ -134,7 +135,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Aspetta, si difende, e colpisce solo quando il nemico è sfinito.",
     currencyReserve: 300,
     ambushThreshold: 900,
-    attackRatioThreshold: 2.2,
+    minWinProbability: 0.78,
     minArmiesToKeepAttacking: 3,
     randomness: 0.05,
     continentFocus: 0.2,
@@ -148,7 +149,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Carica sempre, a qualunque costo.",
     currencyReserve: 0,
     ambushThreshold: null,
-    attackRatioThreshold: 0.5,
+    minWinProbability: 0.15,
     minArmiesToKeepAttacking: 1,
     randomness: 0.4,
     continentFocus: 0.1,
@@ -162,7 +163,7 @@ export const PERSONALITIES: AiPersonality[] = [
     tagline: "Difende la sua terra e si scaglia su chiunque diventi troppo forte.",
     currencyReserve: 100,
     ambushThreshold: null,
-    attackRatioThreshold: 1.3,
+    minWinProbability: 0.42,
     minArmiesToKeepAttacking: 2,
     randomness: 0.2,
     continentFocus: 0.2,
@@ -178,7 +179,7 @@ const DEFAULT_PERSONALITY: AiPersonality = {
   tagline: "Un soldato senza scuola: gioca in modo prevedibile e bilanciato.",
   currencyReserve: 0,
   ambushThreshold: null,
-  attackRatioThreshold: 1.5,
+  minWinProbability: 0.5,
   minArmiesToKeepAttacking: 1,
   randomness: 0,
   continentFocus: 0,
