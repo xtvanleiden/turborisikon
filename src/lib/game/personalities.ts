@@ -24,6 +24,9 @@ export interface AiPersonality {
   continentFocus: number;
   /** 0..1: peso dato all'attaccare il giocatore attualmente in testa alla partita */
   targetLeaderBias: number;
+  /** 0..1: peso dato a finire un avversario abbastanza debole da poter essere eliminato
+   *  del tutto in questo turno, per ereditarne riserva e Risikon (stile "caccia al debole") */
+  huntWeakBias: number;
   /** 0..1: quota (tra il minimo obbligatorio e il massimo possibile) di armate spostate dopo una conquista */
   conquestOverstack: number;
   /** 0..1: quanta priorità dà al rinforzare i fronti deboli invece di espandersi liberamente */
@@ -42,6 +45,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.1,
     continentFocus: 0.8,
     targetLeaderBias: 0.2,
+    huntWeakBias: 0.6,
     conquestOverstack: 0.8,
     defensiveBias: 0.2,
   },
@@ -56,6 +60,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.15,
     continentFocus: 0.5,
     targetLeaderBias: 0.6,
+    huntWeakBias: 0.7,
     conquestOverstack: 0.9,
     defensiveBias: 0.4,
   },
@@ -70,6 +75,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.05,
     continentFocus: 0.3,
     targetLeaderBias: 0.1,
+    huntWeakBias: 0.9,
     conquestOverstack: 0.3,
     defensiveBias: 0.1,
   },
@@ -84,6 +90,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.05,
     continentFocus: 0.6,
     targetLeaderBias: 0.4,
+    huntWeakBias: 0.6,
     conquestOverstack: 0.5,
     defensiveBias: 0.7,
   },
@@ -98,6 +105,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.35,
     continentFocus: 0.3,
     targetLeaderBias: 0.3,
+    huntWeakBias: 0.5,
     conquestOverstack: 0.4,
     defensiveBias: 0.3,
   },
@@ -112,6 +120,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.1,
     continentFocus: 0.9,
     targetLeaderBias: 0.7,
+    huntWeakBias: 0.5,
     conquestOverstack: 0.6,
     defensiveBias: 0.5,
   },
@@ -126,6 +135,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.25,
     continentFocus: 0.4,
     targetLeaderBias: 0.3,
+    huntWeakBias: 0.4,
     conquestOverstack: 0.5,
     defensiveBias: 0.8,
   },
@@ -140,6 +150,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.05,
     continentFocus: 0.2,
     targetLeaderBias: 0.5,
+    huntWeakBias: 0.3,
     conquestOverstack: 0.8,
     defensiveBias: 0.9,
   },
@@ -154,6 +165,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.4,
     continentFocus: 0.1,
     targetLeaderBias: 0,
+    huntWeakBias: 0.5,
     conquestOverstack: 0.9,
     defensiveBias: 0,
   },
@@ -168,6 +180,7 @@ export const PERSONALITIES: AiPersonality[] = [
     randomness: 0.2,
     continentFocus: 0.2,
     targetLeaderBias: 0.9,
+    huntWeakBias: 0.3,
     conquestOverstack: 0.4,
     defensiveBias: 0.9,
   },
@@ -184,6 +197,7 @@ const DEFAULT_PERSONALITY: AiPersonality = {
   randomness: 0,
   continentFocus: 0,
   targetLeaderBias: 0,
+  huntWeakBias: 0.3,
   conquestOverstack: 0.3,
   defensiveBias: 0.5,
 };

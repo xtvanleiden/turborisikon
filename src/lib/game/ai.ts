@@ -62,6 +62,38 @@ function continentCompletionBonus(state: GameState, playerId: string, territoryI
   return 0;
 }
 
+/** true se conquistare questo territorio spezzerebbe un continente attualmente completo di un avversario
+ *  (gli toglie il bonus di rinforzo): una priorità classica delle IA più "geografiche". */
+function continentDenialBonus(state: GameState, targetOwnerId: string, territoryId: string): number {
+  for (const continent of CONTINENTS) {
+    if (!continent.territories.includes(territoryId)) continue;
+    const fullyOwnedByTarget = continent.territories.every(
+      (tid) => state.territories[tid].owner === targetOwnerId
+    );
+    if (fullyOwnedByTarget) return 1;
+  }
+  return 0;
+}
+
+/** Stima delle armate necessarie per eliminare del tutto un giocatore in un turno:
+ *  le sue armate attuali, più circa 1 armata di presidio per territorio da occupare,
+ *  più un margine per l'eventuale rinforzo che riceverebbe, più un cuscinetto di sicurezza.
+ *  Ispirata alla logica delle IA storiche che davano priorità a "finire" gli avversari deboli
+ *  per ereditarne le risorse invece di limitarsi a mordicchiare i confini. */
+function estimatedArmiesToEliminate(state: GameState, targetPlayerId: string): number {
+  const territories = ownedIds(state, targetPlayerId);
+  const totalArmies = territories.reduce((sum, id) => sum + state.territories[id].armies, 0);
+  const territoryCount = territories.length;
+  return totalArmies + territoryCount + Math.ceil(territoryCount / 3) + 3;
+}
+
+/** true se il giocatore ha, in totale sulla mappa, abbastanza armate per eliminare del tutto
+ *  il bersaglio in questo turno secondo la stima di `estimatedArmiesToEliminate`. */
+function canLikelyEliminate(state: GameState, playerId: string, targetPlayerId: string): boolean {
+  const ownArmies = ownedIds(state, playerId).reduce((sum, id) => sum + state.territories[id].armies, 0);
+  return ownArmies >= estimatedArmiesToEliminate(state, targetPlayerId);
+}
+
 /** Individua il giocatore attualmente "in testa" (più territori, poi più armate totali). */
 function leaderPlayerId(state: GameState): string | null {
   let best: { id: string; territories: number; armies: number } | null = null;
@@ -244,8 +276,15 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
 
       let score = winProbability;
       score += continentCompletionBonus(state, playerId, toId) * personality.continentFocus * 3;
+      score += continentDenialBonus(state, to.owner, toId) * personality.continentFocus * 2;
       if (leaderId && to.owner === leaderId) score += personality.targetLeaderBias * 2;
-      if (ownedIds(state, to.owner).length === 1) score += ELIMINATION_BONUS;
+      if (ownedIds(state, to.owner).length === 1) {
+        score += ELIMINATION_BONUS;
+      } else if (canLikelyEliminate(state, playerId, to.owner)) {
+        // il bersaglio è abbastanza debole da poter essere eliminato del tutto in questo
+        // turno: alcuni condottieri (stile "Vexer") danno priorità a finirlo per il bottino
+        score += personality.huntWeakBias * 3;
+      }
 
       candidates.push({ from: fromId, to: toId, fromArmies: from.armies, winProbability, score });
     }

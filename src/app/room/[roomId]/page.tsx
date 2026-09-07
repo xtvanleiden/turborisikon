@@ -113,7 +113,7 @@ export default function RoomPage() {
 
   const validTargets = useMemo(() => {
     const set = new Set<string>();
-    if (!game || !myId) return set;
+    if (!game || !myId || !isMyTurn) return set;
     if ((game.phase === "reinforce" || game.phase === "setup") && !selectedFrom) {
       for (const [id, t] of Object.entries(game.territories)) {
         if (t.owner === myId) set.add(id);
@@ -147,7 +147,7 @@ export default function RoomPage() {
       return set;
     }
     return set;
-  }, [game, myId, selectedFrom]);
+  }, [game, myId, isMyTurn, selectedFrom]);
 
   function onTerritoryClick(id: string) {
     if (!game || !isMyTurn) return;
@@ -702,7 +702,7 @@ export default function RoomPage() {
 
         <div className="card" style={{ flex: 1, overflowY: "auto", maxHeight: 260 }}>
           <h3 style={{ marginTop: 0, marginBottom: 8, fontSize: 15 }}>Registro</h3>
-          <div style={{ display: "flex", flexDirection: "column-reverse", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {[...game.log]
               .slice(-40)
               .reverse()
