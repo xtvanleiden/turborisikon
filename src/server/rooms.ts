@@ -26,9 +26,35 @@ interface Room {
   /** playerId -> socketId (null if disconnected human) */
   sockets: Record<string, string | null>;
   aiRunning: boolean;
+  /** timestamp (Date.now()) dell'ultima azione ricevuta su questa stanza */
+  lastActivity: number;
 }
 
 const rooms = new Map<string, Room>();
+
+function touch(room: Room) {
+  room.lastActivity = Date.now();
+}
+
+function hasConnectedHuman(room: Room): boolean {
+  return Object.values(room.sockets).some((socketId) => socketId !== null);
+}
+
+// Le stanze non vengono mai chiuse esplicitamente: senza pulizia, ogni stanza mai
+// creata (anche abbandonata o finita da ore) resterebbe in memoria per sempre finché
+// il processo resta attivo, con conseguente crescita indefinita dell'uso di RAM.
+const INACTIVE_ROOM_TTL_MS = 2 * 60 * 60 * 1000; // 2 ore senza nessuno connesso
+const ROOM_SWEEP_INTERVAL_MS = 15 * 60 * 1000; // controlla ogni 15 minuti
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, room] of rooms) {
+    if (hasConnectedHuman(room)) continue;
+    if (now - room.lastActivity > INACTIVE_ROOM_TTL_MS) {
+      rooms.delete(id);
+    }
+  }
+}, ROOM_SWEEP_INTERVAL_MS);
 
 function makeRoomId(): string {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -147,6 +173,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
       gameState,
       sockets: { [playerId]: socket.id },
       aiRunning: false,
+      lastActivity: Date.now(),
     };
     rooms.set(roomId, room);
     socket.join(roomId);
@@ -159,6 +186,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     (payload: { roomId: string; name: string }, ack: (res: any) => void) => {
       const room = rooms.get(payload.roomId?.toUpperCase());
       if (!room) return ack({ ok: false, error: "Stanza non trovata" });
+      touch(room);
       if (room.gameState.status !== "lobby") {
         return ack({ ok: false, error: "La partita è già iniziata" });
       }
@@ -185,6 +213,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     (payload: { roomId: string; playerId: string }, ack: (res: any) => void) => {
       const room = rooms.get(payload.roomId?.toUpperCase());
       if (!room) return ack({ ok: false, error: "Stanza non trovata" });
+      touch(room);
       const player = room.gameState.players.find((p) => p.id === payload.playerId);
       if (!player) return ack({ ok: false, error: "Giocatore non trovato in questa stanza" });
       room.sockets[payload.playerId] = socket.id;
@@ -203,6 +232,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     ) => {
       const room = rooms.get(payload.roomId);
       if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
+      touch(room);
       if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può farlo" });
       try {
         const existingPlayers = room.gameState.players;
@@ -225,6 +255,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     (payload: { roomId: string; playerId: string; targetId: string }, ack?: (res: any) => void) => {
       const room = rooms.get(payload.roomId);
       if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
+      touch(room);
       if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può farlo" });
       if (payload.targetId === room.hostId) return ack?.({ ok: false, error: "Non puoi rimuovere l'host" });
       room.gameState = removePlayer(room.gameState, payload.targetId);
@@ -237,6 +268,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
   socket.on("room:start", (payload: { roomId: string; playerId: string }, ack?: (res: any) => void) => {
     const room = rooms.get(payload.roomId);
     if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
+    touch(room);
     if (room.hostId !== payload.playerId) return ack?.({ ok: false, error: "Solo l'host può avviare la partita" });
     try {
       room.gameState = startGame(room.gameState);
@@ -254,6 +286,7 @@ export function registerRoomHandlers(io: Server, socket: Socket) {
     (payload: { roomId: string; action: GameAction }, ack?: (res: any) => void) => {
       const room = rooms.get(payload.roomId);
       if (!room) return ack?.({ ok: false, error: "Stanza non trovata" });
+      touch(room);
       try {
         room.gameState = applyAction(room.gameState, payload.action);
         ack?.({ ok: true });
