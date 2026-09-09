@@ -211,11 +211,34 @@ export default function RoomPage() {
     setSelectedTo(null);
   }, [game?.phase, game?.currentPlayerIndex]);
 
+  // a ogni nuovo turno le quantità impostate manualmente non hanno più senso:
+  // non deve restare la quantità da comprare/piazzare del turno precedente
   useEffect(() => {
-    if (game?.phase === "conquer" && game.pendingConquest) {
-      setConquerCount(game.pendingConquest.min);
+    setPlaceCount(1);
+    setBuyCount(0);
+  }, [game?.currentPlayerIndex]);
+
+  useEffect(() => {
+    if (game?.phase !== "conquer" || !game.pendingConquest) return;
+    const { min, max } = game.pendingConquest;
+    setConquerCount(min);
+    // se il minimo obbligatorio coincide col massimo possibile non c'è alcuna scelta reale:
+    // si risolve subito senza aprire il pannello di selezione
+    if (min === max && isMyTurn && myId) {
+      dispatch({ type: "MOVE_IN_ARMIES", playerId: myId, count: min });
     }
-  }, [game?.phase, game?.pendingConquest?.to]);
+  }, [game?.phase, game?.pendingConquest?.to, game?.pendingConquest?.min, game?.pendingConquest?.max]);
+
+  // se non ci sono armate da piazzare né abbastanza Risikon per comprarne, passa subito
+  // all'attacco: non c'è nulla da fare in questa fase di rinforzo
+  useEffect(() => {
+    if (!game || !isMyTurn || game.phase !== "reinforce" || !myId) return;
+    const player = game.players.find((p) => p.id === myId);
+    if (!player) return;
+    if (player.reserve === 0 && player.currency < game.settings.armyCostR) {
+      dispatch({ type: "END_REINFORCE", playerId: myId });
+    }
+  }, [game, isMyTurn, myId]);
 
   if (!myId) {
     return (
@@ -599,7 +622,6 @@ export default function RoomPage() {
                           to: selectedTo,
                           dice: Math.min(diceCount, maxDice),
                         });
-                        setSelectedTo(null);
                       }}
                     >
                       Attacca!
