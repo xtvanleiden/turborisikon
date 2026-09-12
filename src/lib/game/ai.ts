@@ -1,7 +1,7 @@
 import { CONTINENTS, TERRITORY_MAP } from "./board";
 import { attackerWinProbability } from "./combat";
 import { maxArmiesPurchasable } from "./economy";
-import { personalityById } from "./personalities";
+import { AiPersonality, personalityById } from "./personalities";
 import { GameAction, GameState } from "./types";
 
 function ownedIds(state: GameState, playerId: string): string[] {
@@ -112,6 +112,45 @@ function leaderPlayerId(state: GameState): string | null {
   return best?.id ?? null;
 }
 
+function totalArmies(state: GameState, playerId: string): number {
+  return ownedIds(state, playerId).reduce((sum, id) => sum + state.territories[id].armies, 0);
+}
+
+function isHumanControlled(state: GameState, playerId: string): boolean {
+  return state.players.find((p) => p.id === playerId)?.kind === "human";
+}
+
+/** Individua il rivale vivo più debole (meno armate totali, a parità meno territori): il bersaglio
+ *  naturale della "modalità esecutore", equivalente al WP (weakest player) delle IA storiche che
+ *  ordinavano i rivali per forza (RankSort) per scegliere chi finire per primo. */
+function weakestAlivePlayerId(state: GameState, excludeId: string): string | null {
+  let best: { id: string; armies: number; territories: number } | null = null;
+  for (const p of state.players) {
+    if (!p.alive || p.id === excludeId) continue;
+    const owned = ownedIds(state, p.id);
+    const armies = owned.reduce((sum, id) => sum + state.territories[id].armies, 0);
+    if (!best || armies < best.armies || (armies === best.armies && owned.length < best.territories)) {
+      best = { id: p.id, armies, territories: owned.length };
+    }
+  }
+  return best?.id ?? null;
+}
+
+/** true se le proprie armate totali superano già di `finisherThreshold` volte quelle del rivale più
+ *  forte rimasto: equivale al rilevamento "sto vincendo alla grande" delle IA storiche
+ *  (PArmiesCount(PMe) > soglia * avversario), che le faceva smettere di giocare in modo prudente e
+ *  passare alla modalità esecutore contro il rivale più debole per chiudere in fretta la partita. */
+function isFinisherMode(state: GameState, playerId: string, personality: AiPersonality): boolean {
+  const own = totalArmies(state, playerId);
+  let strongestOther = 0;
+  for (const p of state.players) {
+    if (!p.alive || p.id === playerId) continue;
+    strongestOther = Math.max(strongestOther, totalArmies(state, p.id));
+  }
+  if (strongestOther === 0) return true;
+  return own > strongestOther * personality.finisherThreshold;
+}
+
 /** Sceglie un elemento tra i migliori candidati (già ordinati per punteggio decrescente),
  *  con una probabilità di scostarsi dall'ottimo che cresce con `randomness` (0..1). */
 function pickWithRandomness<T>(sorted: T[], randomness: number): T {
@@ -173,6 +212,8 @@ export function decideConquerMove(state: GameState, playerId: string): GameActio
 export function decideReinforcement(state: GameState, playerId: string): GameAction[] {
   const player = state.players.find((p) => p.id === playerId)!;
   const personality = personalityById(player.personalityId);
+  const finisher = isFinisherMode(state, playerId, personality);
+  const weakestId = weakestAlivePlayerId(state, playerId);
   const actions: GameAction[] = [];
 
   // Gestione dei Risikon: alcuni condottieri risparmiano per un "agguato" futuro,
@@ -202,7 +243,20 @@ export function decideReinforcement(state: GameState, playerId: string): GameAct
       // priorità di rinforzo basata sulla probabilità REALE che il fronte regga a un attacco
       // totale del vicino più forte, non su un semplice conteggio di armate
       const urgency = (1 - holdProbability(state, playerId, id)) * 10;
-      const priority = urgency + continentProgress(state, playerId, id) * personality.continentFocus * 3;
+      let priority = urgency + continentProgress(state, playerId, id) * personality.continentFocus * 3;
+
+      // i fronti che affacciano sul rivale designato (il più debole, o un umano) ricevono
+      // priorità extra: è lì che va ammassata la forza per aprire e sostenere il varco,
+      // l'equivalente del calcolo del percorso più economico (TWeakestPath) delle IA storiche
+      const adjacentEnemies = TERRITORY_MAP[id].adjacent
+        .map((adj) => state.territories[adj].owner)
+        .filter((o): o is string => !!o && o !== playerId);
+      if (weakestId && adjacentEnemies.includes(weakestId)) {
+        priority += personality.huntWeakBias * (finisher ? 6 : 3);
+      }
+      if (adjacentEnemies.some((o) => isHumanControlled(state, o))) {
+        priority += personality.vsHumanBias * (finisher ? 4 : 2);
+      }
       return { id, score: priority };
     })
     .filter((b): b is { id: string; score: number } => b !== null)
@@ -246,13 +300,18 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
   const personality = personalityById(player.personalityId);
   const owned = ownedIds(state, playerId);
   const leaderId = leaderPlayerId(state);
+  const finisher = isFinisherMode(state, playerId, personality);
+  const weakestId = weakestAlivePlayerId(state, playerId);
 
   // Più turni passano senza che questo giocatore attacchi, più diventa disposto a rischiare.
   const inactivity = player.turnsSinceLastAttack;
-  const minWinProbability = Math.max(
+  let minWinProbability = Math.max(
     IMPATIENCE_PROB_FLOOR,
     personality.minWinProbability - inactivity * IMPATIENCE_PROB_STEP
   );
+  // in modalità esecutore anche il condottiero più prudente smette di trattenersi:
+  // ha già la partita in pugno, ora si tratta solo di chiuderla in fretta
+  if (finisher) minWinProbability = Math.min(minWinProbability, IMPATIENCE_PROB_FLOOR);
   const minArmiesToKeepAttacking = Math.max(
     1,
     personality.minArmiesToKeepAttacking - Math.floor(inactivity / IMPATIENCE_ARMIES_STEP_TURNS)
@@ -278,12 +337,22 @@ export function decideNextAttack(state: GameState, playerId: string): GameAction
       score += continentCompletionBonus(state, playerId, toId) * personality.continentFocus * 3;
       score += continentDenialBonus(state, to.owner, toId) * personality.continentFocus * 2;
       if (leaderId && to.owner === leaderId) score += personality.targetLeaderBias * 2;
+      if (isHumanControlled(state, to.owner)) {
+        // contro un avversario umano alcuni condottieri alzano la guardia (e l'aggressività)
+        // molto più che contro un'altra IA, specie una volta in modalità esecutore
+        score += personality.vsHumanBias * (finisher ? 3 : 1.5);
+      }
       if (ownedIds(state, to.owner).length === 1) {
         score += ELIMINATION_BONUS;
       } else if (canLikelyEliminate(state, playerId, to.owner)) {
         // il bersaglio è abbastanza debole da poter essere eliminato del tutto in questo
         // turno: alcuni condottieri (stile "Vexer") danno priorità a finirlo per il bottino
         score += personality.huntWeakBias * 3;
+      }
+      if (finisher && to.owner === weakestId) {
+        // modalità esecutore: il rivale più debole rimasto è il bersaglio designato,
+        // lo si insegue anche se non è ancora eliminabile in questo turno
+        score += personality.huntWeakBias * 4 + 2;
       }
 
       candidates.push({ from: fromId, to: toId, fromArmies: from.armies, winProbability, score });
@@ -332,11 +401,27 @@ export function decideFortify(state: GameState, playerId: string): GameAction | 
   if (player.currency < state.settings.fortifyCostR) return null;
 
   const personality = personalityById(player.personalityId);
+  const finisher = isFinisherMode(state, playerId, personality);
+  const weakestId = weakestAlivePlayerId(state, playerId);
   const owned = ownedIds(state, playerId);
   const scored = owned.map((id) => ({ id, score: borderScore(state, playerId, id) }));
 
   const frontIds = new Set(scored.filter((s) => s.score !== null).map((s) => s.id));
   if (frontIds.size === 0) return null;
+
+  // in modalità esecutore, i fronti che affacciano sul bersaglio designato (il rivale più
+  // debole, o l'unico umano rimasto) hanno sempre la precedenza sugli altri
+  const targetFrontIds = finisher
+    ? new Set(
+        [...frontIds].filter((id) =>
+          TERRITORY_MAP[id].adjacent.some((adj) => {
+            const owner = state.territories[adj].owner;
+            return owner === weakestId || (!!owner && owner !== playerId && isHumanControlled(state, owner));
+          })
+        )
+      )
+    : frontIds;
+  const fortifyTargets = targetFrontIds.size > 0 ? targetFrontIds : frontIds;
 
   const interior = scored
     .filter((s) => s.score === null && state.territories[s.id].armies > 1)
@@ -344,15 +429,15 @@ export function decideFortify(state: GameState, playerId: string): GameAction | 
 
   for (const candidate of interior) {
     const spare = state.territories[candidate.id].armies - 1;
-    const urgent = spare >= URGENT_INTERIOR_STOCKPILE;
+    const urgent = spare >= URGENT_INTERIOR_STOCKPILE || finisher;
     // sotto la soglia critica, i condottieri meno difensivi a volte preferiscono continuare
     // a espandersi piuttosto che ritirare truppe; oltre la soglia si muovono quasi sempre
     if (!urgent && Math.random() > 0.5 + personality.defensiveBias * 0.5) continue;
 
-    const nearestFront = nearestReachableAmong(state, playerId, candidate.id, frontIds);
+    const nearestFront = nearestReachableAmong(state, playerId, candidate.id, fortifyTargets);
     if (!nearestFront) continue;
 
-    const intensity = urgent ? 0.7 : 0.4 + 0.6 * personality.defensiveBias;
+    const intensity = finisher ? 0.9 : urgent ? 0.7 : 0.4 + 0.6 * personality.defensiveBias;
     const count = Math.min(5, Math.max(1, Math.round(spare * intensity)));
     return { type: "FORTIFY", playerId, from: candidate.id, to: nearestFront, count };
   }
